@@ -80,6 +80,7 @@ public class PDFViewerActivity extends Activity {
 	private int zoomedWidth, zoomedHeight;
     
     private Handler uiHandler;
+    private boolean isListening = true;
     
 	/** Called when the activity is first created. */
     @Override
@@ -93,7 +94,7 @@ public class PDFViewerActivity extends Activity {
         mSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         CommandRecognitionListener mCommandListener = new CommandRecognitionListener();
         mSpeechRecognizer.setRecognitionListener(mCommandListener);
-        //starts listening in startRenderThread()
+        //starts listening in startRender()
         
         //initialize views for swapping
         pageBuffer[0] = new GraphView(this); 
@@ -192,7 +193,8 @@ public class PDFViewerActivity extends Activity {
 		if (mPdfFile != null) {
 			showPage();
 		}
-        mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(this));
+		if (isListening)
+			mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(this));
 		mPageControlsView.redraw();
 	}
 
@@ -230,6 +232,14 @@ public class PDFViewerActivity extends Activity {
 		});
     }
   
+	public void toggleListen() {
+		isListening = !isListening;
+		if (isListening)
+			mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(this));
+		else
+		    mSpeechRecognizer.stopListening();
+	}
+	
 	public void toggleControls() {
 		mPageControlsView.toggleZoomControls();
 	}
@@ -397,6 +407,27 @@ public class PDFViewerActivity extends Activity {
 	  finish();
     }
     
+    @Override
+    public void onResume() {
+    	if (mSpeechRecognizer == null) {
+    		mSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+    		CommandRecognitionListener mCommandListener = new CommandRecognitionListener();
+    		mSpeechRecognizer.setRecognitionListener(mCommandListener);
+    		if (isListening)
+    			mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(this));
+    	}
+    	super.onResume();
+    }
+    
+    @Override
+    public void onPause() {
+    	mSpeechRecognizer.stopListening();
+    	mSpeechRecognizer.cancel();
+    	mSpeechRecognizer.destroy();
+    	mSpeechRecognizer = null;
+    	super.onPause();
+    }
+    
 	@Override
 	public void onBackPressed() {
 	    mSpeechRecognizer.stopListening();
@@ -474,11 +505,13 @@ public class PDFViewerActivity extends Activity {
     		 if ((error == SpeechRecognizer.ERROR_NO_MATCH)) {
     			 Toast.makeText(PDFViewerActivity.this,"Words not recognized. Try again.",Toast.LENGTH_SHORT).show();
     			 //restart listening
-    			 mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(PDFViewerActivity.this));
+    			 if (isListening)
+    				 mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(PDFViewerActivity.this));
     		 }
     		 else if ((error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) {
     			 //restart listening
-    			 mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(PDFViewerActivity.this));
+    			 if (isListening)
+    				 mSpeechRecognizer.startListening(RecognizerIntent.getVoiceDetailsIntent(PDFViewerActivity.this));
     		 }
     	 }
     	

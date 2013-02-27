@@ -28,8 +28,11 @@ public class PageControls extends View {
 	private final Bitmap zoom_out_bmp;
 	private final Bitmap no_zoom_in_bmp;
 	private final Bitmap no_zoom_out_bmp;
+	private final Bitmap listen_on_bmp;
+	private final Bitmap listen_off_bmp;
 	private final Bitmap background_bmp;
-	
+
+	private final Rectangle listen_bounds;
 	private final Rectangle zoom_in_bounds;
 	private final Rectangle zoom_out_bounds;
 	private final Rectangle prev_bounds;
@@ -37,6 +40,7 @@ public class PageControls extends View {
 	 
 	private boolean zoomOutable = true, zoomInable = true;
 	private boolean prevable = false, nextable = true;
+	private boolean isListening = true;
 	
 	private int currPage, numPages;
 	private StringBuffer sb;
@@ -53,12 +57,16 @@ public class PageControls extends View {
         zoom_out_bmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.zoom_out);
         no_zoom_in_bmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.no_zoom_in);
         no_zoom_out_bmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.no_zoom_out);
+        listen_on_bmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.listen_on);
+        listen_off_bmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.listen_off);
         background_bmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.menu_bg);
         
         setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     	
         float offset = MARGIN_PADDING;
-        zoom_out_bounds = new Rectangle(MARGIN_PADDING,0,zoom_out_bmp.getWidth(),zoom_out_bmp.getHeight());
+        listen_bounds = new Rectangle(MARGIN_PADDING,0,listen_on_bmp.getWidth(),listen_on_bmp.getHeight());
+        offset += listen_on_bmp.getWidth();
+        zoom_out_bounds = new Rectangle(offset,0,zoom_out_bmp.getWidth(),zoom_out_bmp.getHeight());
         offset += zoom_out_bmp.getWidth();
         zoom_in_bounds = new Rectangle(offset,0,zoom_in_bmp.getWidth(),zoom_in_bmp.getHeight());
         offset += zoom_in_bmp.getWidth()+MARGIN_PADDING;
@@ -89,7 +97,12 @@ public class PageControls extends View {
         float offset = MARGIN_PADDING;
     	canvas.drawBitmap(background_bmp, new Rect(0, 0, background_bmp.getWidth(), background_bmp.getHeight()), new Rect(0, 0, getWidth(), getHeight()), paint); 
         float height_offset = getHeight() - zoom_out_bmp.getHeight();
-    	if (zoomOutable)
+        if(isListening)
+         	canvas.drawBitmap(listen_on_bmp, offset, height_offset, paint); 
+        else
+        	canvas.drawBitmap(listen_off_bmp, offset, height_offset, paint); 
+        offset += listen_off_bmp.getWidth();
+        if (zoomOutable)
         	canvas.drawBitmap(zoom_out_bmp, offset, height_offset, paint); 
         else
         	canvas.drawBitmap(no_zoom_out_bmp, offset, height_offset, paint); 
@@ -124,7 +137,12 @@ public class PageControls extends View {
         super.onTouchEvent(ev);
         switch (ev.getAction()) {
 	        case MotionEvent.ACTION_DOWN:
-	        	if (OverlapTester.pointInRectangle(zoom_out_bounds, ev.getX(), ev.getY())) {
+	        	if (OverlapTester.pointInRectangle(listen_bounds, ev.getX(), ev.getY())) {
+	        		isListening = !isListening;
+	        		((PDFViewerActivity)context).toggleListen();
+	        		invalidate();
+	        	}
+	        	else if (OverlapTester.pointInRectangle(zoom_out_bounds, ev.getX(), ev.getY())) {
 	        		if (zoomOutable) {
 		        		((PDFViewerActivity)context).zoomOut();
 	        			invalidate();
