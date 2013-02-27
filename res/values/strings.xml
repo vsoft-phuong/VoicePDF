@@ -1,0 +1,8 @@
+<resources>
+
+    <string name="app_name">VoicePDF</string>
+    <string name="no_recent_files">No recent files</string>
+    <string name="no_files">No PDF files available</string>
+    <string name="thumbnail">thumbnail</string>
+
+</resources>
