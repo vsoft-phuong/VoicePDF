@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,6 +23,7 @@ import android.os.Handler;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.util.Log;
 import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
@@ -51,6 +53,12 @@ public class PDFViewerActivity extends Activity {
 	public static final float MIN_ZOOM = 0.25f;
 	public static final float MAX_ZOOM = 3.0f;
 	private static final float ZOOM_INCREMENT = 1.2f;
+
+	private static final int VIEW_BUFFER_SIZE = 3;
+	private static final int PAGE_CACHE_SIZE = 9;
+	private static final int CACHE_END_BUFFER = 2;
+	private static final int CACHE_FORWARD = 1;
+	private static final int CACHE_BACKWARD = 2;
 	
     public static final String EXTRA_PDFFILENAME = "net.sf.andpdf.extra.PDFFILENAME";
     public static final String EXTRA_SHOWIMAGES = "net.sf.andpdf.extra.SHOWIMAGES";
@@ -63,24 +71,26 @@ public class PDFViewerActivity extends Activity {
 	public static final boolean DEFAULTUSEFONTSUBSTITUTION = false;
 	public static final boolean DEFAULTKEEPCACHES = false;
 	
-	private boolean fromMainActivity = true;
-	
 	private SpeechRecognizer mSpeechRecognizer;
 	
-	private final GraphView[] pageBuffer = new GraphView[3];
+	private final GraphView[] viewBuffer = new GraphView[VIEW_BUFFER_SIZE];
 	private PageViewControls mPageControlsView;
 	private FrameLayout mView;
 	private String pdffilename;
 	private PDFFile mPdfFile;
 	private float mZoom;
 
+	private final ArrayList<PDFPage> pages = new ArrayList<PDFPage>();
     private PDFPage mPdfPage;
-    private int currPage, oldPage;
+    private int currPage, oldPage = 0;
+    private int cacheBegPage, cacheEndPage;
 	private float pageWidth, pageHeight;
 	private int zoomedWidth, zoomedHeight;
-    
+
+    private Thread backgroundThread;
     private Handler uiHandler;
     private boolean isListening = true;
+	private boolean fromMainActivity = true;
     
 	/** Called when the activity is first created. */
     @Override
@@ -94,18 +104,18 @@ public class PDFViewerActivity extends Activity {
         mSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         CommandRecognitionListener mCommandListener = new CommandRecognitionListener();
         mSpeechRecognizer.setRecognitionListener(mCommandListener);
-        //starts listening in startRender()
+        //starts listening in startRenderThread()
         
         //initialize views for swapping
-        pageBuffer[0] = new GraphView(this); 
-        pageBuffer[1] = new GraphView(this); 
-        pageBuffer[2] = new GraphView(this); 
-        
+        int i;
+        for (i=0; i<VIEW_BUFFER_SIZE;i++) {
+        	viewBuffer[i] = new GraphView(this); 
+        }
         mView = new FrameLayout(this);
         mPageControlsView = new PageViewControls(this);
-        mView.addView(pageBuffer[0]);
-        mView.addView(pageBuffer[1]);
-        mView.addView(pageBuffer[2]);
+        for (i=0; i<VIEW_BUFFER_SIZE;i++) {
+            mView.addView(viewBuffer[i]);
+        }
         mView.addView(mPageControlsView);
         
         boolean showImages = getIntent().getBooleanExtra(PDFViewerActivity.EXTRA_SHOWIMAGES, PDFViewerActivity.DEFAULTSHOWIMAGES);
@@ -130,7 +140,7 @@ public class PDFViewerActivity extends Activity {
         if (pdffilename == null)
         	pdffilename = "no file selected";
 
-		currPage = oldPage = STARTPAGE;
+		currPage = cacheBegPage = STARTPAGE;
 		mZoom = STARTZOOM;
 		
 		setContent(null);
@@ -163,7 +173,7 @@ public class PDFViewerActivity extends Activity {
 	
 	@SuppressWarnings("deprecation")
 	private synchronized void loadInitialPages() {
-		int num = mPdfFile.getNumPages();
+		int numPages = mPdfFile.getNumPages();
 
 		//get page size
 		mPdfPage = mPdfFile.getPage(currPage, true);
@@ -179,13 +189,20 @@ public class PDFViewerActivity extends Activity {
         pageHeight = pageWidth/mPdfPage.getWidth()*mPdfPage.getHeight(); //scale page height relatively
 		zoomedWidth = (int)pageWidth;
 		zoomedHeight = (int)pageHeight;
-        //load view buffer
-        pageBuffer[currPage%3].PDFpage =  mPdfPage;
-		if (num > 1) {
-			mPdfPage = mPdfFile.getPage(currPage+1, true);
-			pageBuffer[(currPage+1)%3].PDFpage =  mPdfPage;
-		}
+		
+        //load view buffer and page cache
+        viewBuffer[currPage%VIEW_BUFFER_SIZE].PDFpage = mPdfPage;
+        pages.add(mPdfPage);
 
+        if (numPages > PAGE_CACHE_SIZE)
+        	numPages = PAGE_CACHE_SIZE;
+        
+        for (int i=currPage+1; i<=numPages; i++) {
+			mPdfPage = mPdfFile.getPage(i, true);
+	        pages.add(mPdfPage);
+        }
+
+		cacheEndPage = numPages;
         startRender();
 	}
 	
@@ -203,35 +220,89 @@ public class PDFViewerActivity extends Activity {
 		zoomedWidth = (int)(pageWidth*mZoom);
 		zoomedHeight = (int)(pageHeight*mZoom);
 		
+		Log.d("VoicePDF", "showing page "+currPage);
+		Log.d("VoicePDF", " cache "+cacheBegPage +" - "+cacheEndPage);
+		
         //update view
 		uiHandler.post(new Runnable() {
 			public void run() {
-		        pageBuffer[oldPage%3].setVisibility(false);
-		        
-				//replaced by NEXT_VIEW
-				if (currPage == oldPage+1) {
-					//cache next page if available
-					if (currPage < mPdfFile.getNumPages()) {
-						mPdfPage = mPdfFile.getPage(currPage+1, true);
-						pageBuffer[(currPage+1)%3].PDFpage =  mPdfPage;
-					}
-				}
-				//replaced by PREVIOUS_VIEW
-				else if (currPage == oldPage-1){
-					//cache prev page if available
-					if (currPage > STARTPAGE) {
-						mPdfPage = mPdfFile.getPage(currPage-1, true);
-						pageBuffer[(currPage-1)%3].PDFpage =  mPdfPage;
-					}
+				viewBuffer[currPage%VIEW_BUFFER_SIZE].setPageBitmap(zoomedWidth, zoomedHeight);
+				viewBuffer[currPage%VIEW_BUFFER_SIZE].updateImage();
+				if (oldPage != currPage) {
+					viewBuffer[currPage%VIEW_BUFFER_SIZE].setVisibility(true);
+					viewBuffer[oldPage%VIEW_BUFFER_SIZE].setVisibility(false);
 				}
 
-				pageBuffer[currPage%3].setPageBitmap(zoomedWidth, zoomedHeight);
-				pageBuffer[currPage%3].updateImage();
-				pageBuffer[currPage%3].setVisibility(true);
+				//replaced by NEXT_VIEW
+				if (currPage == oldPage+1 && currPage < mPdfFile.getNumPages()) {
+					viewBuffer[(currPage+1)%VIEW_BUFFER_SIZE].PDFpage =  pages.get(currPage+1-cacheBegPage);
+				}
+				//replaced by PREVIOUS_VIEW
+				else if (currPage == oldPage-1 && currPage > STARTPAGE) {
+					viewBuffer[(currPage-1)%VIEW_BUFFER_SIZE].PDFpage =  pages.get(currPage-1-cacheBegPage);
+				}
+				
+				if (currPage >= cacheEndPage-CACHE_END_BUFFER && cacheEndPage != mPdfFile.getNumPages()) {
+					backgroundThread = new Thread(new Runnable() {
+						public void run() {
+							recachePages(CACHE_FORWARD);
+					        backgroundThread = null;
+						}
+					});
+			        backgroundThread.start();
+				}
+				else if (currPage <= cacheBegPage+CACHE_END_BUFFER && cacheBegPage != STARTPAGE) {
+					backgroundThread = new Thread(new Runnable() {
+						public void run() {
+							recachePages(CACHE_BACKWARD);
+					        backgroundThread = null;
+						}
+					});
+			        backgroundThread.start();
+				}
 			}
 		});
     }
-  
+
+	private void recachePages(int recache_type) {
+		//TODO delete Log
+		Log.d("VoicePDF","old cache: page "+cacheBegPage+" - "+cacheEndPage);
+		if (recache_type == CACHE_FORWARD) {
+			int tempEnd = cacheEndPage-CACHE_END_BUFFER-CACHE_END_BUFFER+PAGE_CACHE_SIZE-1;
+			//check if reached end of file
+			if (tempEnd > mPdfFile.getNumPages()) {
+				tempEnd = mPdfFile.getNumPages();
+			}
+			Log.d("VoicePDF"," deleted indx "+0+" - "+(tempEnd-cacheEndPage));
+			pages.subList(0,tempEnd-cacheEndPage).clear();
+			for (int i=cacheEndPage+1;i<=tempEnd;i++) {
+				mPdfPage = mPdfFile.getPage(i, true);
+		        pages.add(mPdfPage);
+				Log.d("VoicePDF"," added page "+i);
+			}
+			cacheEndPage = tempEnd;
+			cacheBegPage = cacheEndPage - PAGE_CACHE_SIZE+1;
+		}
+		else {
+			int tempBeg = cacheBegPage+CACHE_END_BUFFER+CACHE_END_BUFFER+CACHE_END_BUFFER-PAGE_CACHE_SIZE+1;
+			//check if reached beg of file
+			if (tempBeg < STARTPAGE) {
+				tempBeg = STARTPAGE;
+			}
+
+			Log.d("VoicePDF"," deleted indx "+(PAGE_CACHE_SIZE-cacheBegPage+tempBeg)+" - "+PAGE_CACHE_SIZE);
+			pages.subList(PAGE_CACHE_SIZE-cacheBegPage+tempBeg,PAGE_CACHE_SIZE).clear();
+			for (int i=cacheBegPage-1;i>=tempBeg;i--) {
+				mPdfPage = mPdfFile.getPage(i, true);
+		        pages.add(0,mPdfPage);
+				Log.d("VoicePDF"," added page "+i);
+			}
+			cacheBegPage = tempBeg;
+			cacheEndPage = cacheBegPage + PAGE_CACHE_SIZE-1;
+		}
+		Log.d("VoicePDF","new cache: page "+cacheBegPage+" - "+cacheEndPage);
+	}
+	
 	public void toggleListen() {
 		isListening = !isListening;
 		if (isListening)
@@ -315,32 +386,32 @@ public class PDFViewerActivity extends Activity {
 	}
     
 	public void gotoPage(int pageNum) {
+		//TODO doesn't work as expected
 		if ((pageNum!=currPage) && (pageNum>=1) && (pageNum <= mPdfFile.getNumPages())) {
-			if (pageNum < currPage-1 || pageNum > currPage+1) {
-				recacheAndShow(pageNum, mZoom);
-				currPage = oldPage = pageNum;
+			currPage = pageNum;
+			//recache if necessary
+			if (currPage < cacheBegPage || currPage > cacheEndPage) {
+				recachePages(CACHE_FORWARD);
 			}
-			else {
-				startRender();
-			}
+			reinitializeViewBuffer();
+			oldPage = currPage;
+			startRender();
 		}
 	}
-
-    private void recacheAndShow(int page, float zoom) {
-    	//reinitialize view buffer
-    	mPdfPage = mPdfFile.getPage(page, true);
-        pageBuffer[currPage%3].PDFpage =  mPdfPage;
-		if (page > STARTPAGE) {
-			mPdfPage = mPdfFile.getPage(page-1, true);
-			pageBuffer[(currPage-1)%3].PDFpage =  mPdfPage;
+	
+	private void reinitializeViewBuffer() {
+        viewBuffer[currPage%VIEW_BUFFER_SIZE].PDFpage =  pages.get(currPage-cacheBegPage);
+		viewBuffer[currPage%VIEW_BUFFER_SIZE].setPageBitmap(zoomedWidth, zoomedHeight);
+		viewBuffer[currPage%VIEW_BUFFER_SIZE].updateImage();
+		viewBuffer[oldPage%VIEW_BUFFER_SIZE].setVisibility(false);
+		viewBuffer[currPage%VIEW_BUFFER_SIZE].setVisibility(true);
+		if (currPage > STARTPAGE) {
+			viewBuffer[(currPage-1)%VIEW_BUFFER_SIZE].PDFpage =  pages.get(currPage-1-cacheBegPage);
 		}
-		if (page < mPdfFile.getNumPages()) {
-			mPdfPage = mPdfFile.getPage(page+1, true);
-			pageBuffer[(currPage+1)%3].PDFpage =  mPdfPage;
+		if (currPage < mPdfFile.getNumPages()) {
+			viewBuffer[(currPage+1)%VIEW_BUFFER_SIZE].PDFpage =  pages.get(currPage+1-cacheBegPage);
 		}
-
-        startRender();
-    }
+	}
     
 	public int getPageWidth() {
 		return zoomedWidth;
@@ -549,6 +620,7 @@ public class PDFViewerActivity extends Activity {
     		 Iterator<String> itr = mHashSet.iterator();
     		 while(itr.hasNext()) {
     			 temp = itr.next();
+    			 Log.d("VoicePDF", "recognized: " + temp);
     			 if(temp.contains("next")) {
     				 PDFViewerActivity.this.nextPage();
     				 return;
