@@ -23,7 +23,6 @@ import android.os.Handler;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
-import android.util.Log;
 import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
@@ -215,13 +214,10 @@ public class PDFViewerActivity extends Activity {
 		mPageControlsView.redraw();
 	}
 
-	private void showPage() {
+	private synchronized void showPage() {
 		//calculate zoom
 		zoomedWidth = (int)(pageWidth*mZoom);
 		zoomedHeight = (int)(pageHeight*mZoom);
-		
-		Log.d("VoicePDF", "showing page "+currPage);
-		Log.d("VoicePDF", " cache "+cacheBegPage +" - "+cacheEndPage);
 		
         //update view
 		uiHandler.post(new Runnable() {
@@ -233,6 +229,13 @@ public class PDFViewerActivity extends Activity {
 					viewBuffer[oldPage%VIEW_BUFFER_SIZE].setVisibility(false);
 				}
 
+				//synchronization issues
+				if (backgroundThread != null) {
+					while(backgroundThread != null) {
+						; //wait
+					}
+				}
+				
 				//replaced by NEXT_VIEW
 				if (currPage == oldPage+1 && currPage < mPdfFile.getNumPages()) {
 					viewBuffer[(currPage+1)%VIEW_BUFFER_SIZE].PDFpage =  pages.get(currPage+1-cacheBegPage);
@@ -265,20 +268,16 @@ public class PDFViewerActivity extends Activity {
     }
 
 	private void recachePages(int recache_type) {
-		//TODO delete Log
-		Log.d("VoicePDF","old cache: page "+cacheBegPage+" - "+cacheEndPage);
 		if (recache_type == CACHE_FORWARD) {
 			int tempEnd = cacheEndPage-CACHE_END_BUFFER-CACHE_END_BUFFER+PAGE_CACHE_SIZE-1;
 			//check if reached end of file
 			if (tempEnd > mPdfFile.getNumPages()) {
 				tempEnd = mPdfFile.getNumPages();
 			}
-			Log.d("VoicePDF"," deleted indx "+0+" - "+(tempEnd-cacheEndPage));
 			pages.subList(0,tempEnd-cacheEndPage).clear();
 			for (int i=cacheEndPage+1;i<=tempEnd;i++) {
 				mPdfPage = mPdfFile.getPage(i, true);
 		        pages.add(mPdfPage);
-				Log.d("VoicePDF"," added page "+i);
 			}
 			cacheEndPage = tempEnd;
 			cacheBegPage = cacheEndPage - PAGE_CACHE_SIZE+1;
@@ -290,17 +289,14 @@ public class PDFViewerActivity extends Activity {
 				tempBeg = STARTPAGE;
 			}
 
-			Log.d("VoicePDF"," deleted indx "+(PAGE_CACHE_SIZE-cacheBegPage+tempBeg)+" - "+PAGE_CACHE_SIZE);
 			pages.subList(PAGE_CACHE_SIZE-cacheBegPage+tempBeg,PAGE_CACHE_SIZE).clear();
 			for (int i=cacheBegPage-1;i>=tempBeg;i--) {
 				mPdfPage = mPdfFile.getPage(i, true);
 		        pages.add(0,mPdfPage);
-				Log.d("VoicePDF"," added page "+i);
 			}
 			cacheBegPage = tempBeg;
 			cacheEndPage = cacheBegPage + PAGE_CACHE_SIZE-1;
 		}
-		Log.d("VoicePDF","new cache: page "+cacheBegPage+" - "+cacheEndPage);
 	}
 	
 	public void toggleListen() {
@@ -620,7 +616,6 @@ public class PDFViewerActivity extends Activity {
     		 Iterator<String> itr = mHashSet.iterator();
     		 while(itr.hasNext()) {
     			 temp = itr.next();
-    			 Log.d("VoicePDF", "recognized: " + temp);
     			 if(temp.contains("next")) {
     				 PDFViewerActivity.this.nextPage();
     				 return;
