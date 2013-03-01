@@ -269,6 +269,7 @@ public class PDFViewerActivity extends Activity {
 
 	private void recachePages(int recache_type) {
 		if (recache_type == CACHE_FORWARD) {
+			//endPage moves to position after endBufferx2 from beg of cache
 			int tempEnd = cacheEndPage-CACHE_END_BUFFER-CACHE_END_BUFFER+PAGE_CACHE_SIZE-1;
 			//check if reached end of file
 			if (tempEnd > mPdfFile.getNumPages()) {
@@ -283,6 +284,7 @@ public class PDFViewerActivity extends Activity {
 			cacheBegPage = cacheEndPage - PAGE_CACHE_SIZE+1;
 		}
 		else {
+			//begPage moves to position before endBufferx3 from end of cache
 			int tempBeg = cacheBegPage+CACHE_END_BUFFER+CACHE_END_BUFFER+CACHE_END_BUFFER-PAGE_CACHE_SIZE+1;
 			//check if reached beg of file
 			if (tempBeg < STARTPAGE) {
@@ -382,12 +384,28 @@ public class PDFViewerActivity extends Activity {
 	}
     
 	public void gotoPage(int pageNum) {
-		//TODO doesn't work as expected
+		//TODO doesn't work as expected sometimes
 		if ((pageNum!=currPage) && (pageNum>=1) && (pageNum <= mPdfFile.getNumPages())) {
 			currPage = pageNum;
 			//recache if necessary
 			if (currPage < cacheBegPage || currPage > cacheEndPage) {
-				recachePages(CACHE_FORWARD);
+				//currPage moves to position after endBufferx2
+				cacheBegPage = currPage-CACHE_END_BUFFER-CACHE_END_BUFFER;
+				cacheEndPage = cacheBegPage + PAGE_CACHE_SIZE -1;
+				//check if reached end of file
+				if (cacheEndPage > mPdfFile.getNumPages()) {
+					cacheEndPage = mPdfFile.getNumPages();
+					cacheBegPage = cacheEndPage - PAGE_CACHE_SIZE+1;
+				}
+				else if (cacheBegPage < STARTPAGE) {
+					cacheBegPage = STARTPAGE;
+					cacheEndPage = cacheBegPage + PAGE_CACHE_SIZE -1;
+				}
+		        pages.clear();
+				for (int i=cacheBegPage;i<=cacheEndPage;i++) {
+					mPdfPage = mPdfFile.getPage(i, true);
+			        pages.add(mPdfPage);
+				}
 			}
 			reinitializeViewBuffer();
 			oldPage = currPage;

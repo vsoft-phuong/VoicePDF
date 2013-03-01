@@ -1314,17 +1314,16 @@ containing a value of this type.
         public static final int etPassword=0x7f04003d;
         public static final int filename=0x7f04003c;
         public static final int homeAsUp=0x7f04000b;
-        public static final int indicator=0x7f040043;
+        public static final int indicator=0x7f040042;
         public static final int listMode=0x7f040007;
         public static final int none=0x7f040000;
         public static final int normal=0x7f040006;
-        public static final int pager=0x7f040044;
+        public static final int pager=0x7f040043;
         public static final int recent_files_list=0x7f040040;
         public static final int showCustom=0x7f04000d;
         public static final int showHome=0x7f04000a;
         public static final int showTitle=0x7f04000c;
         public static final int tabMode=0x7f040008;
-        public static final int text=0x7f040042;
         public static final int thumbnail=0x7f04003a;
         public static final int thumbnail_image=0x7f04003b;
         public static final int top=0x7f040004;
@@ -1370,10 +1369,9 @@ containing a value of this type.
         public static final int pdf_file_password=0x7f030019;
         public static final int recent_files=0x7f03001a;
         public static final int recent_files_row=0x7f03001b;
-        public static final int search=0x7f03001c;
-        public static final int sherlock_spinner_dropdown_item=0x7f03001d;
-        public static final int sherlock_spinner_item=0x7f03001e;
-        public static final int simple_tabs=0x7f03001f;
+        public static final int sherlock_spinner_dropdown_item=0x7f03001c;
+        public static final int sherlock_spinner_item=0x7f03001d;
+        public static final int simple_tabs=0x7f03001e;
     }
     public static final class string {
         /**  Content description for the action bar "home" affordance. [CHAR LIMIT=NONE] 
@@ -1423,8 +1421,9 @@ containing a value of this type.
         public static final int abs__shareactionprovider_share_with_application=0x7f0a0009;
         public static final int app_name=0x7f0a000f;
         public static final int no_files=0x7f0a0011;
+        public static final int no_files_found=0x7f0a0012;
         public static final int no_recent_files=0x7f0a0010;
-        public static final int thumbnail=0x7f0a0012;
+        public static final int thumbnail=0x7f0a0013;
     }
     public static final class style {
         public static final int AppTheme=0x7f09005d;
